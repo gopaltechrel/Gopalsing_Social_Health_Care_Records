@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Gopalsing Social Health Care Records</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{
+      --accent:#0d6efd;
+      --med-blue:#e9f5ff;
+      --muted:#6c757d;
+      --bg:#f6f8fb;
+    }
+    body{ background:var(--bg); font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; }
+    .topbar{ background:#fff; box-shadow:0 1px 0 rgba(0,0,0,.05); padding:12px 18px; position:sticky; top:0; z-index:50; display:flex; gap:12px; align-items:center;}
+    .title{ font-weight:700; font-size:20px; color:var(--accent); margin-right:auto; }
+    .card-anim{ border-radius:10px; transition:transform .18s ease,box-shadow .18s ease; }
+    .card-anim:hover{ transform:translateY(-6px); box-shadow:0 12px 30px rgba(13,110,253,.06); }
+    .sidebar{ max-height:78vh; overflow:auto; padding-right:8px; }
+    .thumb{ width:56px; height:56px; object-fit:cover; border-radius:8px; border:1px solid #e9eef6; }
+    .small-muted{ color:var(--muted); font-size:.9rem; }
+    .metric{ font-weight:700; font-size:1.3rem; }
+    .badge-status { padding:.35rem .6rem; border-radius:8px; font-weight:600; }
+    .recovered { background:#e6f4ea; color:#0f5132; }
+    .treat { background:#fff4e6; color:#7a4a00; }
+    .chart-card{ min-height:220px; }
+    .fade-up{ animation:fadeUp .42s ease both; }
+    @keyframes fadeUp{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:none } }
+    .action-btn{ min-width:76px; }
+    .mono{ font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; }
+    /* animated counters */
+    .count-up { transition: all .6s cubic-bezier(.2,.9,.2,1); display:inline-block; }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="title">Gopalsing Social Health Care Records</div>
+
+    <input id="globalSearch" class="form-control form-control-sm" style="max-width:380px" placeholder="Search patient, condition or id" />
+    <button id="exportBtn" class="btn btn-outline-secondary btn-sm">Export</button>
+    <button id="importBtn" class="btn btn-outline-secondary btn-sm">Import</button>
+    <input id="importFile" type="file" accept="application/json" style="display:none">
+    <button id="addRecordBtn" class="btn btn-primary btn-sm">Add Record</button>
+  </header>
+
+  <main class="container-fluid p-3">
+    <div class="row g-3">
+      <!-- LEFT SIDEBAR: filters & metrics -->
+      <aside class="col-lg-3">
+        <div class="card card-anim mb-3">
+          <div class="card-body sidebar">
+            <h6 class="mb-3">Filters</h6>
+
+            <div class="mb-2">
+              <select id="genderFilter" class="form-select form-select-sm">
+                <option value="all">All Genders</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <select id="ageFilter" class="form-select form-select-sm">
+                <option value="all">All Age Groups</option>
+                <option value="0-17">0 - 17</option>
+                <option value="18-30">18 - 30</option>
+                <option value="31-45">31 - 45</option>
+                <option value="46-60">46 - 60</option>
+                <option value="60+">60+</option>
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <select id="statusFilter" class="form-select form-select-sm">
+                <option value="all">All Status</option>
+                <option value="recovered">Recovered</option>
+                <option value="treatment">Under Treatment</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+
+            <div class="d-grid gap-2 mb-3">
+              <button id="loadDemo" class="btn btn-outline-primary btn-sm">Load demo data</button>
+              <button id="clearAll" class="btn btn-outline-danger btn-sm">Clear</button>
+            </div>
+
+            <hr>
+            <p class="small-muted">Records stored locally in your browser. Export to backup or import to restore.</p>
+            <hr>
+
+            <h6 class="mb-2">Summary Metrics</h6>
+
+            <div class="mb-2 small-muted">Total patients</div>
+            <div class="mb-3 metric"><span id="metricTotal" class="count-up">0</span></div>
+
+            <div class="mb-2 small-muted">Average BMI</div>
+            <div class="mb-3 metric"><span id="metricBmi" class="count-up">0</span></div>
+
+            <div class="mb-2 small-muted">Recovery rate</div>
+            <div class="mb-3 metric"><span id="metricRecovery" class="count-up">0%</span></div>
+          </div>
+        </div>
+
+        <div class="card card-anim">
+          <div class="card-body">
+            <h6>Quick info</h6>
+            <p class="small-muted mb-0">You can add patient records with height (cm) and weight (kg) — BMI will be computed. Use filters to focus on groups.</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MIDDLE / RIGHT: charts and table -->
+      <section class="col-lg-9">
+        <div class="row g-3 mb-2">
+          <div class="col-lg-6">
+            <div class="card card-anim chart-card p-3 fade-up">
+              <h6>Condition Distribution</h6>
+              <div style="min-height:220px"><canvas id="condChart"></canvas></div>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="card card-anim chart-card p-3 fade-up">
+              <h6>Age vs BMI (scatter)</h6>
+              <div style="min-height:220px"><canvas id="bmiChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card card-anim p-3 fade-up">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Patient Records</h6>
+            <div class="small-muted">Records: <span id="recordCount">0</span></div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead>
+                <tr>
+                  <th style="width:4%">#</th>
+                  <th style="width:8%">Photo</th>
+                  <th style="width:20%">Name</th>
+                  <th style="width:14%">Condition</th>
+                  <th style="width:8%">Age</th>
+                  <th style="width:8%">BMI</th>
+                  <th style="width:12%">Status</th>
+                  <th style="width:16%">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="recordsTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- MODAL: Add / Edit -->
+  <div class="modal fade" id="recordModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form id="recordForm">
+          <div class="modal-header">
+            <h5 class="modal-title">Add / Edit Patient</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="recId">
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label small-muted">Full name</label>
+                <input id="patientName" class="form-control" required>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small-muted">Age</label>
+                <input id="patientAge" type="number" min="0" class="form-control" required>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small-muted">Gender</label>
+                <select id="patientGender" class="form-select">
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div class="col-md-4">
+                <label class="form-label small-muted">Height (cm)</label>
+                <input id="heightCm" type="number" step="0.1" min="0" class="form-control" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small-muted">Weight (kg)</label>
+                <input id="weightKg" type="number" step="0.1" min="0" class="form-control" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small-muted">Condition</label>
+                <input id="condition" class="form-control" placeholder="e.g. Hypertension, Diabetes, Flu" required>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label small-muted">Status</label>
+                <select id="status" class="form-select">
+                  <option value="recovered">Recovered</option>
+                  <option value="treatment">Under Treatment</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label small-muted">Photo URL</label>
+                <input id="photoUrl" class="form-control" placeholder="https://... (optional)">
+              </div>
+
+              <div class="col-12">
+                <label class="form-label small-muted">Notes (optional)</label>
+                <textarea id="notes" class="form-control" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="saveRecord">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+  (function(){
+    const STORAGE_KEY = 'social_health_v1';
+    let state = { patients: [], activity: [] };
+
+    // UI refs
+    const recordsTable = document.getElementById('recordsTable');
+    const recordCount = document.getElementById('recordCount');
+    const metricTotal = document.getElementById('metricTotal');
+    const metricBmi = document.getElementById('metricBmi');
+    const metricRecovery = document.getElementById('metricRecovery');
+
+    const condCtx = document.getElementById('condChart');
+    const bmiCtx = document.getElementById('bmiChart');
+    let condChart=null, bmiChart=null;
+
+    const globalSearch = document.getElementById('globalSearch');
+    const genderFilter = document.getElementById('genderFilter');
+    const ageFilter = document.getElementById('ageFilter');
+    const statusFilter = document.getElementById('statusFilter');
+
+    const loadDemo = document.getElementById('loadDemo');
+    const clearAll = document.getElementById('clearAll');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const addRecordBtn = document.getElementById('addRecordBtn');
+
+    const recordModalEl = document.getElementById('recordModal');
+    const recordForm = document.getElementById('recordForm');
+    const recId = document.getElementById('recId');
+    const patientName = document.getElementById('patientName');
+    const patientAge = document.getElementById('patientAge');
+    const patientGender = document.getElementById('patientGender');
+    const heightCm = document.getElementById('heightCm');
+    const weightKg = document.getElementById('weightKg');
+    const conditionEl = document.getElementById('condition');
+    const statusEl = document.getElementById('status');
+    const photoUrl = document.getElementById('photoUrl');
+    const notesEl = document.getElementById('notes');
+
+    const modal = new bootstrap.Modal(recordModalEl);
+
+    // helpers
+    function uid(){ return Math.random().toString(36).slice(2,9); }
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    function load(){ const raw = localStorage.getItem(STORAGE_KEY); state = raw? JSON.parse(raw) : { patients: [], activity: [] }; }
+    function escapeHtml(s){ return (s||'').toString().replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function computeBmi(hCm, wKg){ if(!hCm || !wKg) return 0; const m = hCm/100; const bmi = wKg / (m*m); return Math.round(bmi*10)/10; }
+    function ageGroup(age){
+      if(age<=17) return '0-17';
+      if(age<=30) return '18-30';
+      if(age<=45) return '31-45';
+      if(age<=60) return '46-60';
+      return '60+';
+    }
+
+    // render
+    function renderCharts(filtered){
+      // Condition distribution
+      const counts = {};
+      filtered.forEach(p => { const c = p.condition || 'Unknown'; counts[c] = (counts[c]||0) + 1; });
+      const labels = Object.keys(counts);
+      const data = labels.map(l => counts[l]);
+      if(condChart) condChart.destroy();
+      condChart = new Chart(condCtx, { type:'bar', data:{ labels, datasets:[{ label:'Patients', data, backgroundColor: labels.map((_,i)=>`hsl(${i*40 % 360} 70% 70%)`)}] }, options:{ plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } } });
+
+      // Age vs BMI scatter
+      const scatter = filtered.map(p => ({ x: p.age || 0, y: p.bmi || 0, r: 5 }));
+      if(bmiChart) bmiChart.destroy();
+      bmiChart = new Chart(bmiCtx, { type:'scatter', data:{ datasets:[{ label:'Age vs BMI', data: scatter, backgroundColor:'#0d6efd' }] }, options:{ scales:{ x:{ title:{ display:true, text:'Age' } }, y:{ title:{ display:true, text:'BMI' } } }, plugins:{ legend:{ display:false } } } });
+    }
+
+    function updateMetrics(filtered){
+      const total = state.patients.length;
+      const avgBmi = total ? (Math.round((state.patients.reduce((s,p)=>s + (p.bmi||0),0)/total) * 10)/10) : 0;
+      const recovered = state.patients.filter(p=>p.status==='recovered').length;
+      const recoveryRate = total ? Math.round((recovered/total)*100) : 0;
+      metricTotal.textContent = total;
+      metricBmi.textContent = avgBmi;
+      metricRecovery.textContent = recoveryRate + '%';
+    }
+
+    function renderTable(){
+      const search = globalSearch.value.trim().toLowerCase();
+      const gFilter = genderFilter.value;
+      const aFilter = ageFilter.value;
+      const sFilter = statusFilter.value;
+
+      const filtered = state.patients.filter(p=>{
+        if(gFilter !== 'all' && p.gender !== gFilter) return false;
+        if(aFilter !== 'all' && ageGroup(p.age) !== aFilter) return false;
+        if(sFilter !== 'all' && p.status !== sFilter) return false;
+        if(search){
+          const hay = (p.name + ' ' + p.condition + ' ' + (p.id||'')).toLowerCase();
+          if(!hay.includes(search)) return false;
+        }
+        return true;
+      });
+
+      recordsTable.innerHTML = '';
+      // show newest first
+      filtered.slice().reverse().forEach((p, idx)=>{
+        const tr = document.createElement('tr');
+        const index = filtered.length - idx;
+        const photo = p.photo || 'https://via.placeholder.com/56?text=U';
+        const statusBadge = p.status === 'recovered' ? `<span class="badge-status recovered">Recovered</span>` : p.status === 'treatment' ? `<span class="badge-status treat">Under Treatment</span>` : `<span class="badge-status" style="background:#fdecea;color:#842029">Critical</span>`;
+        tr.innerHTML = `
+          <td>${index}</td>
+          <td><img src="${escapeHtml(photo)}" class="thumb" alt=""></td>
+          <td><strong>${escapeHtml(p.name)}</strong><div class="small-muted mono">ID: ${escapeHtml(p.id)}</div></td>
+          <td>${escapeHtml(p.condition)}</td>
+          <td>${escapeHtml(String(p.age||''))}</td>
+          <td>${escapeHtml(String(p.bmi||''))}</td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary editBtn action-btn" data-id="${p.id}">Edit</button>
+            <button class="btn btn-sm btn-outline-danger deleteBtn action-btn" data-id="${p.id}">Delete</button>
+          </td>`;
+        recordsTable.appendChild(tr);
+      });
+
+      recordCount.textContent = filtered.length;
+      updateMetrics(filtered);
+      renderCharts(filtered);
+    }
+
+    // actions
+    function openAdd(){
+      recId.value = '';
+      patientName.value = '';
+      patientAge.value = '';
+      patientGender.value = 'female';
+      heightCm.value = '';
+      weightKg.value = '';
+      conditionEl.value = '';
+      statusEl.value = 'recovered';
+      photoUrl.value = '';
+      notesEl.value = '';
+      modal.show();
+    }
+
+    function openEdit(id){
+      const p = state.patients.find(x=>x.id === id);
+      if(!p) return alert('Record not found');
+      recId.value = p.id;
+      patientName.value = p.name;
+      patientAge.value = p.age;
+      patientGender.value = p.gender;
+      heightCm.value = p.height;
+      weightKg.value = p.weight;
+      conditionEl.value = p.condition;
+      statusEl.value = p.status;
+      photoUrl.value = p.photo || '';
+      notesEl.value = p.notes || '';
+      modal.show();
+    }
+
+    recordForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      const idVal = recId.value || uid();
+      const name = patientName.value.trim();
+      const age = Number(patientAge.value) || 0;
+      const gender = patientGender.value;
+      const height = Number(heightCm.value) || 0;
+      const weight = Number(weightKg.value) || 0;
+      const condition = conditionEl.value.trim() || 'General';
+      const status = statusEl.value;
+      const photo = photoUrl.value.trim();
+      const notes = notesEl.value.trim();
+
+      if(!name) return alert('Name required');
+      if(!height || !weight) { if(!confirm('Height or weight missing — BMI will be 0. Continue?')) return; }
+
+      const bmi = computeBmi(height, weight);
+      const model = { id: idVal, name, age, gender, height, weight, bmi, condition, status, photo, notes };
+
+      const idx = state.patients.findIndex(x=>x.id === idVal);
+      if(idx >= 0) state.patients[idx] = model;
+      else state.patients.push(model);
+
+      // activity log
+      state.activity = state.activity || [];
+      state.activity.unshift({ msg: idx>=0 ? `Updated ${name}` : `Added ${name}`, at: Date.now() });
+      if(state.activity.length > 200) state.activity.pop();
+
+      save();
+      renderTable();
+      modal.hide();
+    });
+
+    document.addEventListener('click', function(e){
+      if(e.target.matches('.editBtn')) openEdit(e.target.dataset.id);
+      if(e.target.matches('.deleteBtn')){
+        if(!confirm('Delete this record?')) return;
+        state.patients = state.patients.filter(x=>x.id !== e.target.dataset.id);
+        save(); renderTable();
+      }
+    });
+
+    // export/import
+    exportBtn.addEventListener('click', function(){
+      const blob = new Blob([JSON.stringify(state.patients, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'patients.json'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    importBtn.addEventListener('click', ()=> importFile.click());
+    importFile.addEventListener('change', async function(e){
+      const f = e.target.files[0]; if(!f) return;
+      try{
+        const txt = await f.text();
+        const data = JSON.parse(txt);
+        if(!Array.isArray(data)) throw new Error('Invalid file');
+        state.patients = data.map(d => ({
+          id: d.id || uid(),
+          name: d.name || '',
+          age: Number(d.age) || 0,
+          gender: d.gender || 'female',
+          height: Number(d.height) || 0,
+          weight: Number(d.weight) || 0,
+          bmi: Number(d.bmi) || computeBmi(Number(d.height)||0, Number(d.weight)||0),
+          condition: d.condition || 'General',
+          status: d.status || 'treatment',
+          photo: d.photo || '',
+          notes: d.notes || ''
+        }));
+        save(); renderTable(); alert('Imported');
+      } catch(err){
+        alert('Import failed: invalid file');
+      }
+      e.target.value = '';
+    });
+
+    // demo / clear
+    loadDemo.addEventListener('click', function(){
+      state.patients = [
+        { id:'p1', name:'Anita Joshi', age:32, gender:'female', height:160, weight:60, bmi:computeBmi(160,60), condition:'Diabetes', status:'treatment', photo:'https://i.pravatar.cc/56?img=5', notes:'' },
+        { id:'p2', name:'Rohit Singh', age:45, gender:'male', height:172, weight:86, bmi:computeBmi(172,86), condition:'Hypertension', status:'treatment', photo:'https://i.pravatar.cc/56?img=8', notes:'' },
+        { id:'p3', name:'Meera Iyer', age:29, gender:'female', height:158, weight:52, bmi:computeBmi(158,52), condition:'General', status:'recovered', photo:'https://i.pravatar.cc/56?img=3', notes:'' },
+        { id:'p4', name:'Vikram Patel', age:66, gender:'male', height:170, weight:78, bmi:computeBmi(170,78), condition:'COPD', status:'critical', photo:'https://i.pravatar.cc/56?img=12', notes:'' }
+      ];
+      state.activity = [{msg:'Loaded demo', at:Date.now()}];
+      save(); renderTable();
+    });
+
+    clearAll.addEventListener('click', function(){
+      if(!confirm('Clear all records?')) return;
+      state.patients = []; state.activity = []; save(); renderTable();
+    });
+
+    // filters & search
+    [genderFilter, ageFilter, statusFilter].forEach(el => el.addEventListener('change', renderTable));
+    globalSearch.addEventListener('input', renderTable);
+    addRecordBtn.addEventListener('click', openAdd);
+
+    // init
+    load();
+    renderTable();
+
+    // optionally expose state for debugging (Ctrl+D)
+    window.addEventListener('keydown', (e)=>{
+      if(e.ctrlKey && e.key.toLowerCase()==='d'){ console.log('STATE', state); alert('State logged to console'); }
+    });
+
+  })();
+  </script>
+</body>
+</html>
